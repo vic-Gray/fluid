@@ -1,34 +1,30 @@
-import { createLogger, serializeError } from "./utils/logger";
-import express, { NextFunction, Request, Response } from "express";
-import rateLimit from "express-rate-limit";
-import redisClient from "./utils/redis";
-import { RedisRateLimitStore } from "./utils/redisRateLimitStore";
 import cors from "cors";
 import dotenv from "dotenv";
+import express, { NextFunction, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
+import { createLogger, serializeError } from "./utils/logger";
+import redisClient from "./utils/redis";
+import { RedisRateLimitStore } from "./utils/redisRateLimitStore";
 
 import { loadConfig } from "./config";
 import { AppError } from "./errors/AppError";
-import { feeBumpHandler } from "./handlers/feeBump";
-import {
-  getHorizonFailoverClient,
-  initializeHorizonFailoverClient,
-} from "./horizon/failoverClient";
-import { apiKeyMiddleware } from "./middleware/apiKeys";
 import {
   listApiKeysHandler,
-  upsertApiKeyHandler,
   revokeApiKeyHandler,
+  upsertApiKeyHandler,
 } from "./handlers/adminApiKeys";
+import { feeBumpHandler } from "./handlers/feeBump";
+import { getHorizonFailoverClient } from "./horizon/failoverClient";
+import { apiKeyMiddleware } from "./middleware/apiKeys";
 import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiKeyRateLimit } from "./middleware/rateLimit";
 import { AlertService } from "./services/alertService";
 import { initializeBalanceMonitor } from "./workers/balanceMonitor";
-import { initializeLedgerMonitor } from "./workers/ledgerMonitor";
-import { transactionStore } from "./workers/transactionStore";
 import {
   getLedgerMonitor,
   initializeLedgerMonitor,
 } from "./workers/ledgerMonitor";
+import { transactionStore } from "./workers/transactionStore";
 
 const logger = createLogger({ component: "server" });
 
@@ -229,6 +225,8 @@ if (
 } else {
   console.log(
     "Low balance alerting disabled - missing Horizon URL, threshold, or alert transport",
+  );
+}
 
 app.listen(PORT, () => {
   logger.info(
