@@ -23,12 +23,11 @@ import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiKeyRateLimit } from "./middleware/rateLimit";
 import { AlertService } from "./services/alertService";
 import { initializeBalanceMonitor } from "./workers/balanceMonitor";
-import { initializeLedgerMonitor } from "./workers/ledgerMonitor";
-import { transactionStore } from "./workers/transactionStore";
 import {
   getLedgerMonitor,
   initializeLedgerMonitor,
 } from "./workers/ledgerMonitor";
+import { transactionStore } from "./workers/transactionStore";
 
 const logger = createLogger({ component: "server" });
 
@@ -186,10 +185,10 @@ app.post(
   },
 );
 
-// 404 - must come after all routes
 // Admin API keys management (minimal — secure these endpoints in production)
 app.get("/admin/api-keys", listApiKeysHandler);
 app.post("/admin/api-keys", upsertApiKeyHandler);
+app.patch("/admin/api-keys/:key/revoke", revokeApiKeyHandler);
 app.delete("/admin/api-keys/:key", revokeApiKeyHandler);
 
 app.use(notFoundHandler);
