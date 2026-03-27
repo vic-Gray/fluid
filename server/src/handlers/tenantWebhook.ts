@@ -17,6 +17,7 @@ function toWebhookSettingsResponse(tenant: {
   name?: string | null;
   webhookUrl?: string | null;
   webhookEventTypes?: string | null;
+  webhookSecret?: string | null;
   updatedAt?: Date | null;
 }) {
   return {
@@ -24,6 +25,7 @@ function toWebhookSettingsResponse(tenant: {
     tenantName: tenant.name ?? null,
     webhookUrl: tenant.webhookUrl ?? null,
     eventTypes: deserializeWebhookEventTypes(tenant.webhookEventTypes),
+    webhookSecretConfigured: Boolean(tenant.webhookSecret),
     updatedAt: tenant.updatedAt?.toISOString() ?? null,
   };
 }
@@ -44,6 +46,7 @@ export async function getWebhookSettingsHandler(
         name: true,
         webhookUrl: true,
         webhookEventTypes: true,
+        webhookSecret: true,
         updatedAt: true,
       },
     });
@@ -82,6 +85,7 @@ export async function updateWebhookHandler(
         name: true,
         webhookUrl: true,
         webhookEventTypes: true,
+        webhookSecret: true,
         updatedAt: true,
       },
     });
@@ -98,6 +102,10 @@ export async function updateWebhookHandler(
           result.data.webhookUrl === undefined
             ? existingTenant.webhookUrl
             : result.data.webhookUrl,
+        webhookSecret:
+          result.data.webhookSecret === undefined
+            ? existingTenant.webhookSecret
+            : result.data.webhookSecret,
         webhookEventTypes:
           result.data.eventTypes === undefined
             ? existingTenant.webhookEventTypes
@@ -108,6 +116,7 @@ export async function updateWebhookHandler(
         name: true,
         webhookUrl: true,
         webhookEventTypes: true,
+        webhookSecret: true,
         updatedAt: true,
       },
     });
