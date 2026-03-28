@@ -47,6 +47,12 @@ export function Navbar() {
                     >
                         SDKs
                     </Link>
+                    <Link
+                        href="/partners"
+                        className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline-block"
+                    >
+                        Partners
+                    </Link>
                     <ThemeToggle />
                 </nav>
             </div>
