@@ -11,11 +11,6 @@ import {
   upsertApiKeyHandler,
 } from "./handlers/adminApiKeys";
 import {
-  deleteDeviceTokenHandler,
-  listDeviceTokensHandler,
-  registerDeviceTokenHandler,
-} from "./handlers/adminDeviceTokens";
-import {
   listSubscriptionTiersHandler,
   updateTenantSubscriptionTierHandler,
 } from "./handlers/adminSubscriptionTiers";
@@ -24,26 +19,19 @@ import {
   listSignersHandler,
   removeSignerHandler,
 } from "./handlers/adminSigners";
+import { badgeHandler } from "./handlers/badge";
 import { feeBumpBatchHandler, feeBumpHandler } from "./handlers/feeBump";
-import {
-  registerHandler,
-  registrationRateLimit,
-  verifyEmailHandler,
-  verifyEmailRateLimit,
-} from "./handlers/registration";
 import { createCheckoutSessionHandler, stripeWebhookHandler } from "./handlers/stripe";
 import {
   getHorizonFailoverClient,
   initializeHorizonFailoverClient,
 } from "./horizon/failoverClient";
 import { apiKeyMiddleware } from "./middleware/apiKeys";
-import { createGlobalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiKeyRateLimit } from "./middleware/rateLimit";
 import { tenantTierTxLimit } from "./middleware/txLimit";
 import { AlertService } from "./services/alertService";
-import { initializeFcmNotifier } from "./services/fcmNotifier";
-import { PagerDutyNotifier } from "./services/pagerDutyNotifier";
-import { loadSlackNotifierOptionsFromEnv, SlackNotifier } from "./services/slackNotifier";
+import { hydratePersistedSigners, listAdminSigners } from "./services/signerRegistry";
 import { createLogger, serializeError } from "./utils/logger";
 import redisClient from "./utils/redis";
 import { RedisRateLimitStore } from "./utils/redisRateLimitStore";
@@ -54,8 +42,9 @@ import {
 } from "./workers/ledgerMonitor";
 import { initializeIncidentMonitor } from "./workers/incidentMonitor";
 import { transactionStore } from "./workers/transactionStore";
+import { healthHandler } from "./handlers/health";
 
-const logger = createLogger({ name: "fluid-server" });
+dotenv.config();
 
 const app = express();
 app.use(express.json());
@@ -134,6 +123,10 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   next(err);
 });
 
+app.get("/badge", (req: Request, res: Response) => {
+  void badgeHandler(req, res, config);
+});
+
 app.get("/health", (req: Request, res: Response) => {
   const accounts = config.signerPool.getSnapshot().map((account) => ({
     publicKey: account.publicKey,
@@ -178,7 +171,7 @@ app.post(
   tenantTierTxLimit,
   limiter,
   (req: Request, res: Response, next: NextFunction) => {
-    void feeBumpHandler(req, res, next, config);
+    void feeBumpHandler(req, res, config, next);
   },
 );
 
@@ -228,14 +221,6 @@ app.post(
     }
   },
 );
-
-// Self-service tenant registration (public, rate-limited)
-app.post("/auth/register", registrationRateLimit, (req: Request, res: Response, next: NextFunction) => {
-  void registerHandler(req, res, next);
-});
-app.post("/auth/verify-email", verifyEmailRateLimit, (req: Request, res: Response, next: NextFunction) => {
-  void verifyEmailHandler(req, res, next);
-});
 
 app.get("/admin/api-keys", listApiKeysHandler);
 app.post("/admin/api-keys", upsertApiKeyHandler);
