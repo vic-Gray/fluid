@@ -13,6 +13,11 @@ import {
   upsertApiKeyHandler,
 } from "./handlers/adminApiKeys";
 import {
+  listBridgeSettlementsHandler,
+  resolveBridgeSettlementHandler,
+  refundBridgeSettlementHandler,
+} from "./handlers/adminBridgeSettlements";
+import {
   deleteDeviceTokenHandler,
   listDeviceTokensHandler,
   registerDeviceTokenHandler,
@@ -118,6 +123,7 @@ import { transactionStore } from "./workers/transactionStore";
 import { TreasuryRebalancer } from "./services/treasuryRebalancer";
 import { dailyScoringWorker } from "./workers/dailyScoringWorker";
 import { crossChainSyncService } from "./services/crossChainSyncService";
+import { initializeBridgeMonitor } from "./workers/bridgeMonitor";
 import { ipFilterMiddleware } from "./middleware/ipFilter";
 
 const logger = createLogger({ component: "server" });
@@ -405,6 +411,11 @@ app.post("/admin/webhooks/dlq/replay", replayDlqHandler);
 app.post("/admin/webhooks/dlq/delete", deleteDlqHandler);
 app.get("/admin/audit-log/export", exportAuditLogHandler);
 
+// Bridge settlement admin routes
+app.get("/admin/bridge-settlements", listBridgeSettlementsHandler);
+app.patch("/admin/bridge-settlements/:id/resolve", resolveBridgeSettlementHandler);
+app.post("/admin/bridge-settlements/:id/refund", refundBridgeSettlementHandler);
+
 // Notification centre routes (SSE must be registered before /:id/read)
 app.get("/admin/notifications/sse", (req: Request, res: Response) =>
   notificationSseHandler(req, res),
@@ -603,6 +614,7 @@ let ledgerMonitor: ReturnType<typeof initializeLedgerMonitor> | null = null;
 let balanceMonitor: ReturnType<typeof initializeBalanceMonitor> | null = null;
 let incidentMonitor: ReturnType<typeof initializeIncidentMonitor> | null = null;
 let digestWorker: ReturnType<typeof initializeDigestWorker> | null = null;
+let bridgeMonitor: ReturnType<typeof initializeBridgeMonitor> | null = null;
 let shuttingDown = false;
 let server: ReturnType<typeof app.listen> | null = null;
 
@@ -626,6 +638,7 @@ async function shutdown(signal: string): Promise<void> {
   stopChainRegistryHotReload();
   stopOFACScreening();
   crossChainSyncService.stop();
+  bridgeMonitor?.stop();
 
   if (server) {
     server.close(() => process.exit(0));
@@ -773,6 +786,18 @@ try {
   logger.error(
     { ...serializeError(error) },
     "Failed to start cross-chain sync service",
+  );
+}
+
+// Bridge monitor (Phase 11: Multi-Chain)
+try {
+  bridgeMonitor = initializeBridgeMonitor(config, alertService);
+  bridgeMonitor.start();
+  logger.info("Bridge monitor worker started");
+} catch (error) {
+  logger.error(
+    { ...serializeError(error) },
+    "Failed to start bridge monitor",
   );
 }
 

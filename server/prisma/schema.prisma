@@ -481,3 +481,23 @@ model CrossChainSync {
   @@index([status])
   @@index([sourceTxHash])
 }
+
+// Monitor cross-chain settlement operations and tracking timeouts/stalls.
+model CrossChainSettlement {
+  id              String   @id @default(uuid())
+  sourceChain     String   // e.g. "ethereum", "stellar"
+  targetChain     String
+  sourceTxHash    String   @unique
+  targetTxHash    String?
+  amount          BigInt   // Amount in base units
+  asset           String   // e.g. "USDC", "XLM"
+  status          String   @default("PENDING") // PENDING, COMPLETED, FAILED, STALLED, REFUNDED
+  timeoutAt       DateTime
+  error           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([sourceTxHash])
+  @@index([timeoutAt])
+}

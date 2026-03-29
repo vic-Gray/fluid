@@ -86,6 +86,7 @@ export interface Config {
   vault?: VaultConfig;
   ipAllowlist: string[];
   ipDenylist: string[];
+  crossChainSettlementTimeoutMinutes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +291,10 @@ export function loadConfig(): Config {
     vault,
     ipAllowlist,
     ipDenylist,
+    crossChainSettlementTimeoutMinutes: parsePositiveInt(
+      process.env.CROSS_CHAIN_SETTLEMENT_TIMEOUT_MINUTES,
+      10,
+    ),
   };
 
   // ---- Vault mode ----------------------------------------------------------
