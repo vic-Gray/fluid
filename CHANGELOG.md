@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/Stellar-Fluid/fluid/compare/v1.17.0...v1.18.0) (2026-03-29)
+
+
+### Features
+
+* unified multi-chain dashboard tab ([1ee90a0](https://github.com/Stellar-Fluid/fluid/commit/1ee90a02485e70ee721bfb94320e3d885958c171)), closes [#197](https://github.com/Stellar-Fluid/fluid/issues/197)
+
 # [1.17.0](https://github.com/Stellar-Fluid/fluid/compare/v1.16.0...v1.17.0) (2026-03-29)
 
 
