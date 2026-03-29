@@ -1,6 +1,5 @@
 import "dotenv/config";
 
-import dotenv from "dotenv";
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
@@ -102,7 +101,6 @@ import { getFeeMultiplierHandler } from "./handlers/adminFeeMultiplier";
 import { estimateFeeHandler } from "./handlers/estimate";
 import { exportAuditLogHandler } from "./handlers/adminAuditLog";
 import { ensureAuditLogTableIntegrity } from "./services/auditLogger";
-import swaggerUi from "swagger-ui-express";
 import { listAuditLogsHandler } from "./handlers/adminAuditLogs";
 import { startAuditSummaryWorker } from "./services/auditLog";
 import { swaggerSpec } from "./swagger";
@@ -112,8 +110,8 @@ import { transactionStore } from "./workers/transactionStore";
 import { TreasuryRebalancer } from "./services/treasuryRebalancer";
 import { dailyScoringWorker } from "./workers/dailyScoringWorker";
 import { crossChainSyncService } from "./services/crossChainSyncService";
+import { ipFilterMiddleware } from "./middleware/ipFilter";
 
-dotenv.config();
 const logger = createLogger({ component: "server" });
 const config = loadConfig();
 
@@ -150,6 +148,13 @@ const alertService = new AlertService(config.alerting, slackNotifier, {
 treasuryRebalancer.setAlertService(alertService);
 
 const app = express();
+
+// Respect X-Forwarded-For if running behind a proxy
+if (process.env.TRUST_PROXY === "true") {
+  app.set("trust proxy", true);
+}
+
+app.use(ipFilterMiddleware);
 app.use(express.json());
 app.use(soc2RequestLogger);
 
