@@ -89,16 +89,6 @@ import {
   updateChainHandler,
 } from "./handlers/adminChains";
 import { startChainRegistryHotReload, stopChainRegistryHotReload } from "./services/chainRegistryService";
-  deleteDeviceTokenHandler,
-  listDeviceTokensHandler,
-  registerDeviceTokenHandler,
-} from "./handlers/adminDeviceTokens";
-import {
-  SlackNotifier,
-  loadSlackNotifierOptionsFromEnv,
-} from "./services/slackNotifier";
-import { PagerDutyNotifier } from "./services/pagerDutyNotifier";
-import { initializeFcmNotifier } from "./services/fcmNotifier";
 import { initializeFeeManager } from "./services/feeManager";
 import { listTransactionsHandler } from "./handlers/adminTransactions";
 import { getSpendForecastHandler } from "./handlers/adminAnalytics";
@@ -109,6 +99,7 @@ import { swaggerSpec } from "./swagger";
 import { initializeTreasuryRefill } from "./workers/treasuryRefill";
 import { initializeDigestWorker } from "./workers/digestWorker";
 import { transactionStore } from "./workers/transactionStore";
+import { TreasuryRebalancer } from "./services/treasuryRebalancer";
 
 dotenv.config();
 const logger = createLogger({ component: "server" });
@@ -125,10 +116,12 @@ if (fcmNotifier.isConfigured()) {
     "FCM push notifications disabled - FCM_PROJECT_ID/FCM_CLIENT_EMAIL/FCM_PRIVATE_KEY not set",
   );
 }
-
+const treasuryRebalancer = new TreasuryRebalancer(config);
 const alertService = new AlertService(config.alerting, slackNotifier, {
   fcmNotifier,
+  treasuryRebalancer,
 });
+treasuryRebalancer.setAlertService(alertService);
 
 const app = express();
 app.use(express.json());
