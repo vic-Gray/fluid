@@ -1,6 +1,5 @@
 import "dotenv/config";
 
-import dotenv from "dotenv";
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
@@ -13,6 +12,11 @@ import {
   updateApiKeyChainsHandler,
   upsertApiKeyHandler,
 } from "./handlers/adminApiKeys";
+import {
+  listBridgeSettlementsHandler,
+  resolveBridgeSettlementHandler,
+  refundBridgeSettlementHandler,
+} from "./handlers/adminBridgeSettlements";
 import {
   deleteDeviceTokenHandler,
   listDeviceTokensHandler,
@@ -56,6 +60,7 @@ import {
 } from "./handlers/stripe";
 import { getHorizonFailoverClient } from "./horizon/failoverClient";
 import { apiKeyMiddleware } from "./middleware/apiKeys";
+import { soc2RequestLogger } from "./middleware/soc2Logger";
 import {
   createGlobalErrorHandler,
   notFoundHandler,
@@ -95,13 +100,23 @@ import {
   stopChainRegistryHotReload,
 } from "./services/chainRegistryService";
 import { initializeFeeManager } from "./services/feeManager";
+import { initializeOFACScreening, stopOFACScreening } from "./services/ofacScreening";
+import { initializeRegionalDbs, DEFAULT_REGION } from "./services/regionRouter";
 import { listTransactionsHandler } from "./handlers/adminTransactions";
+import {
+  listSARReportsHandler,
+  getSARReportHandler,
+  reviewSARReportHandler,
+  getSARStatsHandler,
+  exportSARReportsHandler
+} from "./handlers/adminSAR";
 import { getSpendForecastHandler } from "./handlers/adminAnalytics";
 import { getFeeMultiplierHandler } from "./handlers/adminFeeMultiplier";
 import { estimateFeeHandler } from "./handlers/estimate";
 import { exportAuditLogHandler } from "./handlers/adminAuditLog";
 import { ensureAuditLogTableIntegrity } from "./services/auditLogger";
 import { listAuditLogsHandler } from "./handlers/adminAuditLogs";
+import { getMultiChainStatsHandler } from "./handlers/adminMultiChainStats";
 import { startAuditSummaryWorker } from "./services/auditLog";
 import { swaggerSpec } from "./swagger";
 import { initializeTreasuryRefill } from "./workers/treasuryRefill";
@@ -115,8 +130,9 @@ import { TreasuryRebalancer } from "./services/treasuryRebalancer";
 import { dailyScoringWorker } from "./workers/dailyScoringWorker";
 import { crossChainSyncService } from "./services/crossChainSyncService";
 import { initializeTenantErasureWorker } from "./workers/tenantErasureWorker";
+import { initializeBridgeMonitor } from "./workers/bridgeMonitor";
+import { ipFilterMiddleware } from "./middleware/ipFilter";
 
-dotenv.config();
 const logger = createLogger({ component: "server" });
 const config = loadConfig();
 
@@ -132,7 +148,9 @@ async function initializeAuditLog() {
 }
 
 initializeAuditLog();
+initializeRegionalDbs();
 
+initializeOFACScreening();
 const feeManager = initializeFeeManager(config);
 const slackNotifier = new SlackNotifier(loadSlackNotifierOptionsFromEnv());
 const pagerDutyNotifier = new PagerDutyNotifier();
@@ -153,7 +171,21 @@ const alertService = new AlertService(config.alerting, slackNotifier, {
 treasuryRebalancer.setAlertService(alertService);
 
 const app = express();
+
+// Respect X-Forwarded-For if running behind a proxy
+if (process.env.TRUST_PROXY === "true") {
+  app.set("trust proxy", true);
+}
+
+app.use(ipFilterMiddleware);
 app.use(express.json());
+app.use(soc2RequestLogger);
+
+// Stamp every response with the instance's home region for observability
+app.use((_req, res, next) => {
+  res.setHeader("X-Fluid-Region", DEFAULT_REGION);
+  next();
+});
 
 // Use Redis-backed store for global IP rate limiting. Falls back to memory store if Redis unavailable.
 const windowSeconds = Math.max(1, Math.ceil(config.rateLimitWindowMs / 1000));
@@ -392,6 +424,7 @@ app.get("/admin/prices", getPriceHandler);
 app.get("/admin/transactions", listTransactionsHandler);
 app.get("/admin/analytics/spend-forecast", getSpendForecastHandler(config));
 app.get("/admin/fee-multiplier", getFeeMultiplierHandler);
+app.get("/admin/multi-chain/stats", getMultiChainStatsHandler(config));
 app.get("/admin/device-tokens", listDeviceTokensHandler);
 app.post("/admin/device-tokens", registerDeviceTokenHandler);
 app.delete("/admin/device-tokens/:id", deleteDeviceTokenHandler);
@@ -399,6 +432,11 @@ app.get("/admin/webhooks/dlq", listDlqHandler);
 app.post("/admin/webhooks/dlq/replay", replayDlqHandler);
 app.post("/admin/webhooks/dlq/delete", deleteDlqHandler);
 app.get("/admin/audit-log/export", exportAuditLogHandler);
+
+// Bridge settlement admin routes
+app.get("/admin/bridge-settlements", listBridgeSettlementsHandler);
+app.patch("/admin/bridge-settlements/:id/resolve", resolveBridgeSettlementHandler);
+app.post("/admin/bridge-settlements/:id/refund", refundBridgeSettlementHandler);
 
 // Notification centre routes (SSE must be registered before /:id/read)
 app.get("/admin/notifications/sse", (req: Request, res: Response) =>
@@ -572,6 +610,23 @@ app.post(
   },
 );
 
+// SAR (Suspicious Activity Report) routes — Phase 12: Compliance
+app.get("/admin/sar/stats", (req: Request, res: Response) => {
+  void getSARStatsHandler(req, res);
+});
+app.get("/admin/sar/export", (req: Request, res: Response) => {
+  void exportSARReportsHandler(req, res);
+});
+app.get("/admin/sar", (req: Request, res: Response) => {
+  void listSARReportsHandler(req, res);
+});
+app.get("/admin/sar/:id", (req: Request, res: Response) => {
+  void getSARReportHandler(req, res);
+});
+app.patch("/admin/sar/:id/review", (req: Request, res: Response) => {
+  void reviewSARReportHandler(req, res);
+});
+
 app.use(notFoundHandler);
 app.use(createGlobalErrorHandler(slackNotifier));
 
@@ -582,6 +637,7 @@ let balanceMonitor: ReturnType<typeof initializeBalanceMonitor> | null = null;
 let incidentMonitor: ReturnType<typeof initializeIncidentMonitor> | null = null;
 let digestWorker: ReturnType<typeof initializeDigestWorker> | null = null;
 let tenantErasureWorker: ReturnType<typeof initializeTenantErasureWorker> | null = null;
+let bridgeMonitor: ReturnType<typeof initializeBridgeMonitor> | null = null;
 let shuttingDown = false;
 let server: ReturnType<typeof app.listen> | null = null;
 
@@ -604,7 +660,9 @@ async function shutdown(signal: string): Promise<void> {
   tenantErasureWorker?.stop();
   feeManager.stop();
   stopChainRegistryHotReload();
+  stopOFACScreening();
   crossChainSyncService.stop();
+  bridgeMonitor?.stop();
 
   if (server) {
     server.close(() => process.exit(0));
@@ -763,6 +821,18 @@ try {
   logger.error(
     { ...serializeError(error) },
     "Failed to start cross-chain sync service",
+  );
+}
+
+// Bridge monitor (Phase 11: Multi-Chain)
+try {
+  bridgeMonitor = initializeBridgeMonitor(config, alertService);
+  bridgeMonitor.start();
+  logger.info("Bridge monitor worker started");
+} catch (error) {
+  logger.error(
+    { ...serializeError(error) },
+    "Failed to start bridge monitor",
   );
 }
 

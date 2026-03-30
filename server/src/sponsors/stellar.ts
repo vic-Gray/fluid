@@ -10,6 +10,10 @@ import { prisma } from "../utils/db";
 import { classifyTransactionCategory } from "../services/transactionCategorizer";
 import { getFeeManager } from "../services/feeManager";
 import { FeeSponsor, SponsorResponse } from "./base";
+import { screenAddresses, logScreeningResult } from "../services/ofacScreening";
+import { extractAddresses } from "../utils/stellarAddressExtractor";
+import { evaluateSARRules } from "../services/sarService";
+import { signTransaction, signTransactionWithVault } from "../signing";
 
 export interface StellarSponsorParams {
   xdr: string;
@@ -71,6 +75,20 @@ export class StellarFeeSponsor implements FeeSponsor {
       );
     }
 
+    // OFAC sanctions screening — check all destination addresses before proceeding
+    const addresses = extractAddresses(innerTransaction);
+    const screeningResult = screenAddresses(addresses);
+    const innerTxHashForAudit = innerTransaction.hash().toString("hex");
+    logScreeningResult(innerTxHashForAudit, tenant.id, screeningResult).catch(() => {});
+
+    if (screeningResult.blocked) {
+      throw new AppError(
+        `Transaction rejected: destination address matches OFAC SDN list`,
+        451,
+        "SANCTIONED_ADDRESS"
+      );
+    }
+
     const feeAmount = await this.estimateFee(params);
     const category = classifyTransactionCategory(
       innerTransaction.operations as Array<{ type?: string }>
@@ -97,9 +115,54 @@ export class StellarFeeSponsor implements FeeSponsor {
         config.networkPassphrase
       );
 
-      feeBumpTx.sign(feePayerAccount.keypair);
+      switch (feePayerAccount.secretSource.type) {
+        case "vault":
+          if (!config.vault) {
+            throw new AppError(
+              "Vault-backed fee payer selected but VAULT_* configuration is missing",
+              500,
+              "INTERNAL_ERROR",
+            );
+          }
+
+          await signTransactionWithVault(
+            feeBumpTx as unknown as {
+              addDecoratedSignature(signature: unknown): void;
+              hash(): Buffer;
+            },
+            feePayerAccount.publicKey,
+            config.vault,
+            feePayerAccount.secretSource.secretPath,
+            config,
+          );
+          break;
+        case "env":
+          await signTransaction(
+            feeBumpTx as unknown as {
+              addDecoratedSignature(signature: unknown): void;
+              hash(): Buffer;
+            },
+            feePayerAccount.secretSource.secret,
+            config,
+          );
+          break;
+        default:
+          throw new AppError(
+            `Unsupported fee payer secret source: ${feePayerAccount.secretSource.type}`,
+            500,
+            "INTERNAL_ERROR",
+          );
+      }
       await recordSponsoredTransaction(tenant.id, Number(feeAmount));
-      
+
+      // Evaluate SAR rules synchronously during fee-bump (fire-and-forget to avoid blocking)
+      evaluateSARRules(
+        transactionRecord.id,
+        tenant.id,
+        Number(feeAmount),
+        category
+      ).catch(err => console.error("SAR evaluation error:", err));
+
       try {
         await transactionMilestoneService.checkForMilestones();
       } catch (error) {
