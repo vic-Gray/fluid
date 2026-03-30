@@ -1,3 +1,10 @@
+## [1.21.1](https://github.com/Stellar-Fluid/fluid/compare/v1.21.0...v1.21.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* require terms acceptance before tenant API key issuance ([cb39ae7](https://github.com/Stellar-Fluid/fluid/commit/cb39ae7c9f46c61a197384cec856e6223c68c984))
+
 # [1.21.0](https://github.com/Stellar-Fluid/fluid/compare/v1.20.0...v1.21.0) (2026-03-30)
 
 
