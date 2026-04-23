@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod error;
 mod horizon;
+mod logging;
 mod metrics;
 mod state;
 mod stellar;
@@ -27,6 +28,7 @@ use db::create_pool;
 use error::AppError;
 use fluid_server::grpc::serve_grpc;
 use horizon::HorizonNodeStatus;
+use logging::init_logging_from_env;
 use sqlx::postgres::PgPool;
 use state::{
     iso_now, utc_day_start_ms, ApiKeyConfig, AppState, HealthFeePayer, RateLimitEntry,
@@ -176,12 +178,15 @@ async fn ai_query_handler(Json(req): Json<QueryRequest>) -> Json<QueryFilters> {
 async fn main() {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "fluid_server=info,tower_http=info".into()),
-        )
-        .init();
+    if let Err(error) = init_logging_from_env() {
+        eprintln!("Failed to initialize log aggregation: {error}. Falling back to console logging.");
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "fluid_server=info,tower_http=info".into()),
+            )
+            .try_init();
+    }
 
     if let Err(error) = run().await {
         error!("{}", error.message);
