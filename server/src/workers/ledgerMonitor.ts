@@ -207,6 +207,7 @@ let ledgerMonitor: LedgerMonitor | null = null;
 export function initializeLedgerMonitor(
   config: Config,
   slackNotifier?: SlackNotifierLike,
+  client?: HorizonFailoverClient,
 ): LedgerMonitor {
   if (ledgerMonitor) {
     logger.warn(
@@ -219,6 +220,7 @@ export function initializeLedgerMonitor(
     config,
     new WebhookService(),
     slackNotifier,
+    client,
   );
   return ledgerMonitor;
 }

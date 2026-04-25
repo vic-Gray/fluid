@@ -52,7 +52,10 @@ import {
   createCheckoutSessionHandler,
   stripeWebhookHandler,
 } from "./handlers/stripe";
-import { getHorizonFailoverClient } from "./horizon/failoverClient";
+import {
+  getHorizonFailoverClient,
+  initializeHorizonFailoverClient,
+} from "./horizon/failoverClient";
 import { apiKeyMiddleware } from "./middleware/apiKeys";
 import { soc2RequestLogger } from "./middleware/soc2Logger";
 import {
@@ -554,7 +557,12 @@ async function shutdown(signal: string): Promise<void> {
 let ledgerMonitorInstance: any = null;
 if (config.horizonUrls.length > 0) {
   try {
-    ledgerMonitorInstance = initializeLedgerMonitor(config);
+    const horizonFailoverClient = initializeHorizonFailoverClient(config);
+    ledgerMonitorInstance = initializeLedgerMonitor(
+      config,
+      undefined,
+      horizonFailoverClient,
+    );
     ledgerMonitorInstance.start();
     logger.info("Ledger monitor worker started");
   } catch (error) {
